@@ -4,7 +4,9 @@ import sqlite3
 import random
 from datetime import datetime
 
-TOKEN = "8720159915:AAHVDgFbXGB8yUDsO3Bl9yID0T-rk0-AOd4"
+import os
+
+TOKEN = os.environ.get("TOKEN")
 ADMIN_ID = 6427806986
 APPROVAL_ADMIN = 7892718908
 MAINTENANCE_MODE = False
