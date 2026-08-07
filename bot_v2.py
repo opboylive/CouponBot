@@ -20,7 +20,7 @@ async def approve_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = int(data[1])
     reward_name = "_".join(data[2:])
 
-    conn = sqlite3.connect("users.db")
+    conn = conn = conn = sqlite3.connect("users.db", timeout=30)
     cur = conn.cursor()
 
     cur.execute(
@@ -1202,7 +1202,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except:
             referrer_id = None
-    conn = sqlite3.connect("users.db")
+    conn = sqlite3.connect("users.db", timeout=30)
     cur = conn.cursor()
 
     cur.execute(
