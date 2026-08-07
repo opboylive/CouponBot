@@ -1172,8 +1172,9 @@ async def add_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+    print("START COMMAND RECEIVED")
     if MAINTENANCE_MODE:
+
         await update.message.reply_text(
             "🤖 OPBOY LIVE BOT\n"
             "━━━━━━━━━━━━━━\n\n"
