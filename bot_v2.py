@@ -350,7 +350,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    yprint("VERIFY CLICKED")
+    print("VERIFY CLICKED")
 
     query = update.callback_query
     await query.answer()
