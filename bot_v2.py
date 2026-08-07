@@ -1309,5 +1309,19 @@ app.add_handler(CallbackQueryHandler(approve_request, pattern="^approve_"))
 app.add_handler(CallbackQueryHandler(reject_request, pattern="^reject_"))
 app.add_handler(CallbackQueryHandler(rewards, pattern="catalog"))
 print("Bot V2 Started...")
+from flask import Flask
+from threading import Thread
+import os
+
+web_app = Flask(__name__)
+
+@web_app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_web():
+    web_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+Thread(target=run_web).start()
 app.run_polling()
 
