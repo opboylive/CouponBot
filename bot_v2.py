@@ -350,7 +350,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("VERIFY CLICKED")
+    yprint("VERIFY CLICKED")
 
     query = update.callback_query
     await query.answer()
@@ -1209,15 +1209,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "INSERT OR IGNORE INTO users(user_id, username, referred_by) VALUES(?, ?, ?)",
         (user.id, user.username, referrer_id)
     )
-
-    channels = [
-        ("📢 Join Main Channel", "https://t.me/opboyLive", "@opboyLive"),
-        ("📢 Join Deals Channel", "https://t.me/opboydeals", "@opboydeals"),
-        ("💬 Join Chat", "https://t.me/OpBoyLive_Chat", "@OpBoyLive_Chat")
-    ]
-
-    conn.commit()
-    conn.close()
 
     channels = [
         ("📢 Join Main Channel", "https://t.me/opboyLive", "@opboyLive"),
