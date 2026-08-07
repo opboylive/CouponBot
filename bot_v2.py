@@ -367,7 +367,6 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for channel in channels:
         print("Checking:", channel)
-
         member = await context.bot.get_chat_member(
             chat_id=channel,
             user_id=user.id
@@ -1173,6 +1172,7 @@ async def add_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("START COMMAND RECEIVED")
+    print("STEP 1 PASSED")
     if MAINTENANCE_MODE:
 
         await update.message.reply_text(
@@ -1241,6 +1241,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(text, url=url)]
             )
 
+    print("CHANNEL CHECK DONE")
     if left_buttons:
         left_buttons.append(
             [InlineKeyboardButton("✅ Verify", callback_data="verify")]
