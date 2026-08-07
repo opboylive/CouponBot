@@ -1,13 +1,13 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 import sqlite3
-from flask import Flask
-from threading import Thread
-import os
+import random
+from datetime import datetime
 
 TOKEN = "8720159915:AAHVDgFbXGB8yUDsO3Bl9yID0T-rk0-AOd4"
 ADMIN_ID = 6427806986
 APPROVAL_ADMIN = 7892718908
+MAINTENANCE_MODE = False
 
 async def approve_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -50,6 +50,15 @@ async def approve_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "UPDATE claim_requests SET status='Approved' WHERE user_id=? AND reward_name=? AND status='Pending'",
         (user_id, reward_name)
     )
+    cur.execute(
+        "INSERT INTO claim_history(user_id, reward_name, points, claim_time) VALUES(?,?,?,?)",
+    (
+        user_id,
+        reward_name,
+        points,
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+)
 
     cur.execute(
         "SELECT code FROM reward_codes WHERE reward_name=? AND used=0 LIMIT 1",
@@ -130,7 +139,8 @@ def init_db():
         points INTEGER DEFAULT 0,
         referrals INTEGER DEFAULT 0,
         referred_by INTEGER,
-        verified_referrals INTEGER DEFAULT 0
+        verified_referrals INTEGER DEFAULT 0,
+        verified INTEGER DEFAULT 0
     )
     """)
 
@@ -181,13 +191,164 @@ def init_db():
         user_id INTEGER,
         reward_name TEXT,
         points INTEGER,
-        status TEXT DEFAULT 'Pending',
-        reward_code TEXT
+        reward_code TEXT,
+        claim_time TEXT
+        
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS referral_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        referrer_id INTEGER,
+        referred_user_id INTEGER,
+        referral_time TEXT
+    )
+    """)
     conn.commit()
     conn.close()
+async def human_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    a = random.randint(2, 9)
+    b = random.randint(1, 9)
+
+    answer = a + b
+    options = [
+        answer,
+        answer + 2,
+        answer - 2
+    ]
+
+    random.shuffle(options)
+
+    context.user_data["captcha_answer"] = answer
+
+    buttons = []
+    for option in options:
+        buttons.append([
+            InlineKeyboardButton(
+                str(option),
+                callback_data=f"captcha_{option}"
+            )
+        ])
+
+    await query.edit_message_text(
+        f"🤖 Human Verification\n\n"
+        f"Solve this:\n\n"
+        f"{a} + {b} = ?",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+async def captcha_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    selected = int(query.data.replace("captcha_", ""))
+
+    correct = context.user_data.get("captcha_answer")
+
+    if selected == correct:
+
+        conn = sqlite3.connect("users.db")
+        cur = conn.cursor()
+
+        cur.execute(
+            "UPDATE users SET verified = 1 WHERE user_id=?",
+            (query.from_user.id,)
+        )
+
+        conn.commit()
+        conn.close()
+
+        buttons = [
+
+            [InlineKeyboardButton("🎁 Claim Reward", callback_data="claim")],
+            [
+                InlineKeyboardButton("👥 Refer & Earn", callback_data="refer"),
+                InlineKeyboardButton("👤 Account Info", callback_data="account")
+            ],
+            [
+                InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard")
+            ],
+            [
+                InlineKeyboardButton("📜 Claim History", callback_data="history"),
+                InlineKeyboardButton("🆘 Support", callback_data="help")
+            ]
+        ]
+
+        await query.edit_message_text(
+            "🎉 WELCOME TO COUPON REWARD HUB 🎉\n\n"
+            "👇 Select an option below to proceed:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    else:
+        await query.answer(
+            "❌ Wrong Answer! Try Again",
+            show_alert=True
+        )
+async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    conn = sqlite3.connect("users.db")
+    cur = conn.cursor()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    cur.execute(
+        """
+        SELECT u.username, COUNT(*) 
+        FROM referral_history r
+        JOIN users u ON u.user_id = r.referrer_id
+        WHERE r.referral_time LIKE ?
+        GROUP BY r.referrer_id
+        ORDER BY COUNT(*) DESC
+        LIMIT 10
+        """,
+        (today + "%",)
+    )
+
+    users = cur.fetchall()
+
+    if not users:
+        text = (
+            "🏆 TODAY'S TOP 10 REFERRERS\n\n"
+            "😔 No referrals today."
+        )
+    else:
+        text = "🏆 TODAY'S TOP 10 REFERRERS\n\n"
+
+        medals = ["🥇", "🥈", "🥉"]
+
+        for i, (username, referrals) in enumerate(users, start=1):
+            name = username[:5] + "****" if username else "User"
+            rank = medals[i-1] if i <= 3 else f"{i}️⃣"
+            text += f"{rank} {name} — {referrals} Referrals\n"
+
+    cur.execute(
+        "SELECT verified_referrals FROM users WHERE user_id=?",
+        (query.from_user.id,)
+    )
+
+    data = cur.fetchone()
+    my_referrals = data[0] if data else 0
+
+    text += (
+        "\n━━━━━━━━━━━━━━\n"
+        f"👤 Your Referrals: {my_referrals}"
+    )
+
+    conn.close()
+
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
+        ])
+    )
+
 async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("VERIFY CLICKED")
 
@@ -233,18 +394,32 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT referred_by, verified_referrals FROM users WHERE user_id=?",
+        "SELECT referred_by, verified_referrals, verified FROM users WHERE user_id=?",
         (user.id,)
     )
 
     data = cur.fetchone()
 
-    if data and data[0] and data[1] == 0:
+    if (
+    data
+    and data[0]
+    and data[1] == 0
+    and data[2] == 0
+    and data[0] != user.id
+):
         referrer_id = data[0]
 
         cur.execute(
             "UPDATE users SET points = points + 1, referrals = referrals + 1, verified_referrals = verified_referrals + 1 WHERE user_id=?",
             (referrer_id,)
+        )
+        cur.execute(
+            "INSERT INTO referral_history(referrer_id, referred_user_id, referral_time) VALUES(?,?,?)",
+            (
+                referrer_id,
+                user.id,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
         )
 
         await context.bot.send_message(
@@ -253,22 +428,28 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         cur.execute(
-            "UPDATE users SET verified_referrals = 1 WHERE user_id=?",
+            "UPDATE users SET verified_referrals = 1, verified = 1 WHERE user_id=?",
             (user.id,)
         )
 
     conn.commit()
     conn.close()
+
+    await human_verify(update, context)
+    return
+
     buttons = [
         [InlineKeyboardButton("🎁 Claim Reward", callback_data="claim")],
         [
             InlineKeyboardButton("👥 Refer & Earn", callback_data="refer"),
             InlineKeyboardButton("👤 Account Info", callback_data="account")
         ],
-        [InlineKeyboardButton("🎟️ Claim Promo Code", callback_data="promo")],
+        [
+            InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard")
+        ],
         [
             InlineKeyboardButton("📜 Claim History", callback_data="history"),
-            InlineKeyboardButton("🆘 Support", url="https://t.me/OpBoyLive_Chat")
+            InlineKeyboardButton("🆘 Support", callback_data="help")
         ]
     ]
 
@@ -562,15 +743,62 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📜 Claims: {total_claims}\n"
         f"💎 Points Used: {total_points}"
     )
+async def confirm_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    print("CONFIRM PRESSED:", query.data)
+
+    reward_name = query.data.replace("confirm_", "", 1)
+
+    await query.edit_message_text(
+        f"⚠️ Confirm Claim\n\n"
+        f"🎁 Reward: {reward_name}\n\n"
+        f"Are you sure you want to claim this reward?",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    "✅ Confirm Claim",
+                    callback_data=f"reward_{reward_name}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "❌ Cancel",
+                    callback_data="catalog"
+                )
+            ]
+        ])
+    )
 async def claim_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    print("CLAIM BUTTON PRESSED:", query.data)
 
     reward_name = query.data.replace("reward_", "", 1)
     user = query.from_user
 
     conn = sqlite3.connect("users.db")
     cur = conn.cursor()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    cur.execute(
+        "SELECT COUNT(*) FROM claim_requests WHERE user_id=? AND claim_time LIKE ?",
+        (user.id, today + "%")
+    )
+
+    daily_claims = cur.fetchone()[0]
+
+    if daily_claims >= 5:
+        conn.close()
+
+        await query.edit_message_text(
+            "🚫 Daily Claim Limit Reached\n\n"
+            "You have reached your daily limit of 5 claims.\n\n"
+            "⏳ Come back tomorrow and try again."
+        )
+        return
 
     cur.execute(
         "SELECT points, stock FROM rewards WHERE name=?",
@@ -605,8 +833,14 @@ async def claim_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     cur.execute(
-        "INSERT INTO claim_requests(user_id, reward_name, points, status) VALUES(?,?,?,?)",
-        (user.id, reward_name, points, "Pending")
+        "INSERT INTO claim_requests(user_id, reward_name, points, status, claim_time) VALUES(?,?,?,?,?)",
+        (
+            user.id,
+            reward_name,
+            points,
+            "Pending",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
     )
 
     conn.commit()
@@ -660,20 +894,10 @@ async def help_center(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await query.edit_message_text(
-    "🎁 HOW TO CLAIM REWARD\n\n"
-    "1️⃣ Earn enough points.\n"
-    "2️⃣ Open Reward Catalog.\n"
-    "3️⃣ Select your reward.\n"
-    "4️⃣ Wait for Admin approval.\n"
-    "5️⃣ Reward code will be delivered automatically.\n\n"
-    "⏳ Approval Time: Usually within 3 Hours.\n"
-    "⚠️ Do not submit the same reward multiple times.",
-    reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅ Back", callback_data="help")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
-    ])
+    "🆘 Help Center\n\n"
+    "Choose your option:",
+    reply_markup=InlineKeyboardMarkup(buttons)
 )
-
 
 
 async def help_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -687,7 +911,7 @@ async def help_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎉 You receive +1 point for every successful referral.\n\n"
         "📈 More referrals = More points = More rewards.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅ Back", callback_data="help")],
+            [InlineKeyboardButton("⬅ Back", callback_data="main_menu")]
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
         ])
     )
@@ -704,7 +928,7 @@ async def help_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "4️⃣ Follow the claim process.\n\n"
         "For any issue, contact support.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅ Back", callback_data="help")]
+            [InlineKeyboardButton("⬅ Back", callback_data="main_menu")]
         ])
     )
 
@@ -717,24 +941,24 @@ async def help_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Share your referral link.\n"
         "When a user joins and verifies successfully, you receive referral points.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅ Back", callback_data="help")]
+            [InlineKeyboardButton("⬅ Back", callback_data="main_menu")]
         ])
-    )
+        )
+
     query = update.callback_query
     await query.answer()
 
     await query.edit_message_text(
-        "🎁 How to Claim Reward\n\n"
-        "1️⃣ Earn enough points.\n"
-        "2️⃣ Open Reward Catalog.\n"
-        "3️⃣ Select your reward.\n"
-        "4️⃣ Press Claim.\n\n"
-        "Your points will be deducted automatically.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅ Back", callback_data="help")]
-        ])
-    )
-
+    "🎁 How to Claim Reward\n\n"
+    "1️⃣ Earn enough points.\n"
+    "2️⃣ Open Reward Catalog.\n"
+    "3️⃣ Select your reward.\n"
+    "4️⃣ Press Claim.\n\n"
+    "Your points will be deducted automatically.",
+    reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅ Back", callback_data="main_menu")]
+    ])
+)
 
     query = update.callback_query
     await query.answer()
@@ -745,23 +969,12 @@ async def help_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Complete referrals.\n"
         "• Participate in future events and offers.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅ Back", callback_data="help")]
+            [InlineKeyboardButton("⬅ Back", callback_data="main_menu")]
         ])
     )
 
 
-async def help_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
 
-    await query.edit_message_text(
-        "👥 Referral System\n\n"
-        "Share your referral link.\n"
-        "When a user joins and verifies successfully, you receive referral points.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅ Back", callback_data="help")]
-        ])
-    )
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -800,7 +1013,7 @@ async def rewards(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons.append([
             InlineKeyboardButton(
                 f"🎁 {name} ({points} Pts) {status}",
-                callback_data=f"reward_{name}"
+                callback_data=f"confirm_{name}"
             )
         ])
 
@@ -930,16 +1143,64 @@ async def points(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
         ])
     )
+async def add_points(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    try:
+        user_id = int(context.args[0])
+        amount = int(context.args[1])
+
+        conn = sqlite3.connect("users.db")
+        cur = conn.cursor()
+
+        cur.execute(
+            "UPDATE users SET points = points + ? WHERE user_id = ?",
+            (amount, user_id)
+        )
+
+        conn.commit()
+        conn.close()
+
+        await update.message.reply_text(
+            f"✅ Added {amount} points to {user_id}"
+        )
+
+    except:
+        await update.message.reply_text(
+            "Use: /addpoints USER_ID POINTS"
+        )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if MAINTENANCE_MODE:
+        await update.message.reply_text(
+            "🤖 OPBOY LIVE BOT\n"
+            "━━━━━━━━━━━━━━\n\n"
+            "🛠️ BOT UNDER MAINTENANCE\n\n"
+            "✨ We are upgrading our bot\n"
+            "🚀 Adding new features & improvements\n\n"
+            "⏳ Please try again later.\n\n"
+            "🙏 Thanks for your patience ❤️\n"
+            "━━━━━━━━━━━━━━"
+        )
+        return
+
     user = update.effective_user
+
+    referrer_id = None
     referrer_id = None
 
     if context.args:
         try:
             referrer_id = int(context.args[0])
+
+            # Anti self referral
+            if referrer_id == user.id:
+                referrer_id = None
+
         except:
-            pass
+            referrer_id = None
     conn = sqlite3.connect("users.db")
     cur = conn.cursor()
 
@@ -951,51 +1212,91 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
 
-    join_buttons = [
-        [InlineKeyboardButton("📢 Join Main Channel", url="https://t.me/opboyLive")],
-        [InlineKeyboardButton("📢 Join Deals Channel", url="https://t.me/opboydeals")],
-        [InlineKeyboardButton("💬 Join Chat", url="https://t.me/OpBoyLive_Chat")],
-        [InlineKeyboardButton("✅ Verify", callback_data="verify")]
+    channels = [
+        ("📢 Join Main Channel", "https://t.me/opboyLive", "@opboyLive"),
+        ("📢 Join Deals Channel", "https://t.me/opboydeals", "@opboydeals"),
+        ("💬 Join Chat", "https://t.me/OpBoyLive_Chat", "@OpBoyLive_Chat")
     ]
 
-    join_markup = InlineKeyboardMarkup(join_buttons)
+    conn.commit()
+    conn.close()
 
-    
-
-
-    buttons = [
-    [InlineKeyboardButton("👤 Account Info", callback_data="account")],
-    [InlineKeyboardButton("🎁 Reward Catalog", callback_data="catalog")],
-    [InlineKeyboardButton("🔔 Refer & Earn", callback_data="refer")],
-    [InlineKeyboardButton("💎 My Points", callback_data="points")],
-    [InlineKeyboardButton("🆘 Help Center", callback_data="help")]
+    channels = [
+        ("📢 Join Main Channel", "https://t.me/opboyLive", "@opboyLive"),
+        ("📢 Join Deals Channel", "https://t.me/opboydeals", "@opboydeals"),
+        ("💬 Join Chat", "https://t.me/OpBoyLive_Chat", "@OpBoyLive_Chat")
     ]
 
-    reply_markup = InlineKeyboardMarkup(buttons)
-    await update.message.reply_text(
-"🎉 Welcome To Coupon Reward Hub 🎉\n\n"
-"Bot use karne ke liye pehle hamare 3 channels join kare 👇",
-        reply_markup=join_markup
-    )
+    left_buttons = []
+
+    for text, url, channel in channels:
+        member = await context.bot.get_chat_member(
+            chat_id=channel,
+            user_id=user.id
+        )
+
+        if member.status in ["left", "kicked"]:
+            left_buttons.append(
+                [InlineKeyboardButton(text, url=url)]
+            )
+
+    if left_buttons:
+        left_buttons.append(
+            [InlineKeyboardButton("✅ Verify", callback_data="verify")]
+        )
+
+        reply_markup = InlineKeyboardMarkup(left_buttons)
+
+    else:
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎁 Claim Reward", callback_data="claim")],
+            [
+                InlineKeyboardButton("👥 Refer & Earn", callback_data="refer"),
+                InlineKeyboardButton("👤 Account Info", callback_data="account")
+            ],
+            [
+                InlineKeyboardButton("🏆 Leaderboard", callback_data="leaderboard")
+            ],
+            [
+                InlineKeyboardButton("📜 Claim History", callback_data="history"),
+                InlineKeyboardButton("🆘 Support", callback_data="help")
+            ]
+        ])
+
+    if left_buttons:
+        await update.message.reply_text(
+            "❌ Please join the missing channel(s) first 👇",
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            "🎉 Welcome To Coupon Reward Hub 🎉\n\n"
+            "👇 Select an option below to proceed:",
+            reply_markup=reply_markup
+        )
 
 init_db()
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("addpoints", add_points))
 app.add_handler(CallbackQueryHandler(verify, pattern="verify"))
+app.add_handler(CallbackQueryHandler(captcha_check, pattern="^captcha_"))
 app.add_handler(CallbackQueryHandler(menu, pattern="main"))
+app.add_handler(CallbackQueryHandler(leaderboard, pattern="leaderboard"))
 
 app.add_handler(CallbackQueryHandler(account, pattern="account"))
 app.add_handler(CallbackQueryHandler(points, pattern="points"))
 app.add_handler(CallbackQueryHandler(history, pattern="history"))
-app.add_handler(CallbackQueryHandler(help_center, pattern="help"))
+app.add_handler(CallbackQueryHandler(help_center, pattern="^help$"))
 app.add_handler(CallbackQueryHandler(help_claim, pattern="help_claim"))
 app.add_handler(CallbackQueryHandler(help_points, pattern="help_points"))
 app.add_handler(CallbackQueryHandler(help_referral, pattern="help_referral"))
 app.add_handler(CallbackQueryHandler(refer, pattern="refer"))
 app.add_handler(CallbackQueryHandler(rewards, pattern="claim"))
+app.add_handler(CallbackQueryHandler(confirm_claim, pattern="^confirm_"))
+app.add_handler(CallbackQueryHandler(claim_reward, pattern="^reward_"))
 app.add_handler(CommandHandler("addcode", addcode))
 app.add_handler(CommandHandler("setstock", setstock))
-app.add_handler(CommandHandler("addpoints", addpoints))
 app.add_handler(CommandHandler("broadcast", broadcast))
 app.add_handler(CommandHandler("requests", requests_list))
 app.add_handler(CommandHandler("users", users_count))
@@ -1005,21 +1306,7 @@ app.add_handler(CommandHandler("listpromo", listpromo))
 app.add_handler(CommandHandler("deletepromo", deletepromo))
 app.add_handler(CallbackQueryHandler(approve_request, pattern="^approve_"))
 app.add_handler(CallbackQueryHandler(reject_request, pattern="^reject_"))
-app.add_handler(CallbackQueryHandler(claim_reward, pattern="^reward_"))
 app.add_handler(CallbackQueryHandler(rewards, pattern="catalog"))
-print("Bot V2 Started...")
-app_flask = Flask(__name__)
-
-@app_flask.route("/")
-def home():
-    return "Bot is running!"
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app_flask.run(host="0.0.0.0", port=port)
-
-Thread(target=run_web).start()
-
 print("Bot V2 Started...")
 app.run_polling()
 
