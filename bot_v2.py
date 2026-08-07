@@ -1210,9 +1210,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         (user.id, user.username, referrer_id)
     )
 
-    conn.commit()
-    conn.close()
-
     channels = [
         ("📢 Join Main Channel", "https://t.me/opboyLive", "@opboyLive"),
         ("📢 Join Deals Channel", "https://t.me/opboydeals", "@opboydeals"),
