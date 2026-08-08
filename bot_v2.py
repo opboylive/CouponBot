@@ -727,11 +727,15 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.execute("SELECT COUNT(*) FROM rewards")
     total_rewards = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM claim_history")
-    total_claims = cur.fetchone()[0]
+    try:
+        cur.execute("SELECT COUNT(*) FROM claim_history")
+        total_claims = cur.fetchone()[0]
 
-    cur.execute("SELECT SUM(points) FROM claim_history")
-    total_points = cur.fetchone()[0] or 0
+        cur.execute("SELECT SUM(points) FROM claim_history")
+        total_points = cur.fetchone()[0] or 0
+    except sqlite3.OperationalError:
+        total_claims = 0
+        total_points = 0
 
     conn.close()
 
@@ -742,6 +746,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📜 Claims: {total_claims}\n"
         f"💎 Points Used: {total_points}"
     )
+
 async def confirm_claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
