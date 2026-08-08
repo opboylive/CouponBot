@@ -153,21 +153,28 @@ def init_db():
 )
 """)
 
-    cur.execute("SELECT COUNT(*) FROM rewards")
-    if cur.fetchone()[0] == 0:
-        rewards_data = [
-            ("Gemini Link", 25, 0),
-            ("BigBasket Cashback", 15, 0),
-            ("Play Store Redeem Code", 9, 0),
-            ("Amazon Gift Card", 9, 0),
-            ("Spotify Premium", 5, 0),
-            ("Netflix 1 Month", 9, 0)
-        ]
+    rewards_data = [
+        ("Gemini Link", 25, 0),
+        ("BigBasket Cashback", 15, 0),
+        ("Play Store Redeem Code", 9, 0),
+        ("Amazon Gift Card", 9, 0),
+        ("Spotify Premium", 5, 0),
+        ("Netflix 1 Month", 9, 0),
+        ("Myntra", 6, 0),
+        ("Domino's", 60, 0)
+    ]
 
-        cur.executemany(
-            "INSERT INTO rewards(name, points, stock) VALUES(?,?,?)",
-            rewards_data
+    for name, points, stock in rewards_data:
+        cur.execute(
+            "SELECT COUNT(*) FROM rewards WHERE name = ?",
+            (name,)
         )
+        if cur.fetchone()[0] == 0:
+            cur.execute(
+                "INSERT INTO rewards(name, points, stock) VALUES(?,?,?)",
+                (name, points, stock)
+            )
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS reward_codes(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
