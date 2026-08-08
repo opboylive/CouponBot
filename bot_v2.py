@@ -1280,6 +1280,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
 
+    print("START REPLY FUNCTION COMPLETED")
 init_db()
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
