@@ -1244,6 +1244,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     print("CHANNEL CHECK DONE")
+    print("ABOUT TO SEND START REPLY")
     if left_buttons:
         left_buttons.append(
             [InlineKeyboardButton("✅ Verify", callback_data="verify")]
